@@ -93,7 +93,8 @@ h2{font-size:1.02rem;font-weight:500}
 .face{font-family:var(--display);font-size:.8rem}
 
 /* charts */
-svg.chart{width:100%;height:auto;display:block;margin-top:10px;overflow:visible}
+svg.chart{width:100%;height:auto;display:block;margin-top:10px;overflow:hidden}
+.dt{display:grid;grid-template-columns:1.3fr 1fr;gap:8px}
 svg.chart text{fill:var(--muted);font-size:10px;font-family:var(--body)}
 .legend{display:flex;gap:14px;font-size:.78rem;color:var(--muted);margin-top:6px;flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
@@ -182,10 +183,13 @@ textarea{min-height:78px;resize:vertical}
     <div><label for="f-pp">Пульс</label><input id="f-pp" type="number" inputmode="numeric" placeholder="72"></div></div></div>
 
   <div class="card"><div class="eyebrow" style="margin-bottom:10px">Сон</div>
-    <div class="row"><div><label for="f-bed">Лёг</label><input id="f-bed" type="time" value="23:30"></div>
-    <div><label for="f-wake">Встал</label><input id="f-wake" type="time" value="07:00"></div></div>
+    <div class="scale" id="f-sl"><button type="button" data-v="none">Не указан</button><button type="button" data-v="yes">Спал</button><button type="button" data-v="no">Не спал</button></div>
+    <div id="f-slbox" hidden>
+    <label for="f-bedd" style="margin-top:12px">Уснул</label><div class="dt"><input id="f-bedd" type="date"><input id="f-bed" type="time" aria-label="Время засыпания"></div>
+    <label for="f-waked" style="margin-top:12px">Проснулся</label><div class="dt"><input id="f-waked" type="date"><input id="f-wake" type="time" aria-label="Время пробуждения"></div>
+    <div class="muted num" id="f-dur" style="margin-top:10px;font-size:.9rem"></div>
     <label style="margin-top:12px">Качество сна</label>
-    <div class="scale" id="f-sq"></div></div>
+    <div class="scale" id="f-sq"></div></div></div>
 
   <div class="card"><div class="eyebrow" style="margin-bottom:10px">Самочувствие</div>
     <label>Общее состояние</label><div class="scale p" id="f-mood"></div>
@@ -254,7 +258,9 @@ function norm(p=profile){
   return{s,d,low:[Math.max(90,s-25),Math.max(60,d-15)],sleep,pulse,target:sleep[0]+.5}}
 
 /* ---------- derived numbers ---------- */
-function sleepH(d){const s=d.sleep;if(!s||!s.bed||!s.wake)return null;const[a,b]=s.bed.split(":").map(Number),[c,e]=s.wake.split(":").map(Number);let m=(c*60+e)-(a*60+b);if(m<=0)m+=1440;return m/60}
+function sleepH(d){const s=d.sleep;if(!s||s.none||!s.bed||!s.wake)return null;
+  if(s.bedDate&&s.wakeDate){const h=(new Date(s.wakeDate+"T"+s.wake)-new Date(s.bedDate+"T"+s.bed))/36e5;return h>0&&h<24?h:null}
+  const[a,b]=s.bed.split(":").map(Number),[c,e]=s.wake.split(":").map(Number);let m=(c*60+e)-(a*60+b);if(m<=0)m+=1440;return m/60}
 function bpOf(d){const r=[d.am,d.pm,...(d.more||[])].filter(x=>x&&x.s&&x.d);if(!r.length)return null;return{s:Math.round(avg(r.map(x=>+x.s))),d:Math.round(avg(r.map(x=>+x.d))),p:Math.round(avg(r.map(x=>+x.p).filter(Boolean)))||null}}
 function bpClass(s,d){const n=norm();
   if(s>=160||d>=100)return["Высокое","b-bad"];
@@ -350,7 +356,7 @@ function vDiary(list){
     <div class="date"><b class="num">${dt.getDate()}</b><span>${WD[dt.getDay()]}</span></div>
     <div style="min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
       <b class="num" style="font-family:var(--display)">${bp?bp.s+"/"+bp.d:"—"}</b>${c?`<span class="badge ${c[1]}"><i></i>${c[0]}</span>`:""}</div>
-      <div class="muted num" style="font-size:.85rem;margin-top:4px">${sh?"Сон "+sh.toFixed(1)+" ч":"Сон не указан"}${d.sleep&&d.sleep.q?" · качество "+d.sleep.q+"/5":""}${d.mood?" · "+MOODS[d.mood-1].toLowerCase():""}</div>
+      <div class="muted num" style="font-size:.85rem;margin-top:4px">${sh?"Сон "+sh.toFixed(1)+" ч":d.sleep&&d.sleep.none?"Не спал":"Сон не указан"}${d.sleep&&d.sleep.q?" · качество "+d.sleep.q+"/5":""}${d.mood?" · "+MOODS[d.mood-1].toLowerCase():""}</div>
       ${(d.symptoms||[]).length?`<div class="chips">${d.symptoms.map(s=>`<span class="chip">${esc(s)}</span>`).join("")}</div>`:""}
       ${[["Утро",d.am],...(d.more||[]).map(m=>[m.t,m]),["Вечер",d.pm]].filter(r=>r[1]&&r[1].s).length>1?`<div class="chips">${[["Утро",d.am],...(d.more||[]).map(m=>[m.t,m]),["Вечер",d.pm]].filter(r=>r[1]&&r[1].s).map(([t,r])=>`<span class="chip num">${esc(t)} ${r.s}/${r.d}${r.p?" · "+r.p:""}</span>`).join("")}</div>`:""}
       ${d.note?`<p class="note">${esc(d.note)}</p>`:""}</div></article>`}).join("")}</div>`}
@@ -364,9 +370,10 @@ function vCharts(list){
   const dots=(f,c)=>L.map((d,i)=>f(d)!=null?`<circle cx="${x(i)}" cy="${y(f(d))}" r="${i===L.length-1?4.5:2.5}" fill="${c}"/>`:"").join("");
   const lab=L.map((d,i)=>i%Math.ceil(L.length/7)===0||i===L.length-1?`<text x="${x(i)}" y="${H-4}" text-anchor="middle">${+d.date.slice(8)}</text>`:"").join("");
   const S=d=>bpOf(d)?.s??null,D=d=>bpOf(d)?.d??null,P=d=>bpOf(d)?.p??null;
-  const bw=(W-pad*2)/Math.max(L.length,1)*.6,sy=h=>H-20-h/10*(H-36);
+  const top=Math.max(10,Math.ceil(Math.max(0,...L.map(sleepH).filter(v=>v!=null))/2)*2);
+  const bw=(W-pad*2)/Math.max(L.length,1)*.6,sy=h=>H-20-Math.min(h,top)/top*(H-36);
   const bars=L.map((d,i)=>{const h=sleepH(d);if(h==null)return"";const cx=pad+(i+.5)*(W-pad*2)/L.length;return`<rect class="grow" style="animation-delay:${i*40}ms" x="${cx-bw/2}" y="${sy(h)}" width="${bw}" height="${H-20-sy(h)}" rx="4" fill="${h>=N.sleep[0]?"var(--sleep)":"var(--sleep2)"}"/>`}).join("");
-  const sgrid=[4,6,8,10].map(v=>`<line x1="${pad}" x2="${W-6}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)"/><text x="0" y="${sy(v)+3}">${v}ч</text>`).join("");
+  const sgrid=[2,4,6,8,10,12,14,16,18,20,22,24].filter(v=>v<=top&&(top<=12||v%4===0)).map(v=>`<line x1="${pad}" x2="${W-6}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)"/><text x="0" y="${sy(v)+3}">${v}ч</text>`).join("");
   const slab=L.map((d,i)=>i%Math.ceil(L.length/7)===0||i===L.length-1?`<text x="${pad+(i+.5)*(W-pad*2)/L.length}" y="${H-4}" text-anchor="middle">${+d.date.slice(8)}</text>`:"").join("");
   const bpl=L.filter(bpOf),as=avg(bpl.map(d=>bpOf(d).s)),ad=avg(bpl.map(d=>bpOf(d).d)),sl=avg(L.map(sleepH).filter(v=>v!=null));
   return `<div class="view">${sampleNote()}
@@ -409,10 +416,19 @@ function scale(el,key,labels){el.innerHTML=labels.map((l,i)=>`<button type="butt
 scale($("#f-sq"),"q",["1","2","3","4","5"]);scale($("#f-mood"),"mood",MOODS);scale($("#f-en"),"energy",["Нет сил","Мало","Средне","Бодро","Полно"]);
 $("#f-sym").innerHTML=SYMS.map(s=>`<button type="button">${s}</button>`).join("");
 $("#f-sym").onclick=e=>{const b=e.target.closest("button");if(b)b.classList.toggle("on")};
+/* sleep: not set / slept (from date+time to date+time) / did not sleep */
+let slMode="none";
+function slSync(){[...$("#f-sl").children].forEach(b=>b.classList.toggle("on",b.dataset.v===slMode));$("#f-slbox").hidden=slMode!=="yes";
+  const h=sleepH({sleep:{bed:$("#f-bed").value,wake:$("#f-wake").value,bedDate:$("#f-bedd").value,wakeDate:$("#f-waked").value}}),m=Math.round((h||0)*60);
+  $("#f-dur").textContent=h?"Продолжительность: "+Math.floor(m/60)+" ч "+String(m%60).padStart(2,"0")+" мин":"Проверьте даты: пробуждение должно быть позже засыпания"}
+$("#f-sl").onclick=e=>{const b=e.target.closest("button");if(b){slMode=b.dataset.v;slSync()}};
+["#f-bed","#f-wake","#f-bedd","#f-waked"].forEach(s=>$(s).oninput=slSync);
 function fill(date){const d=days[date]||{};form={q:d.sleep?.q,mood:d.mood,energy:d.energy};
   $("#f-date").value=date;$("#sheet-title").textContent=days[date]?"Изменить запись":"Запись за день";$("#del").hidden=!days[date];
   [["as","am","s"],["ad","am","d"],["ap","am","p"],["ps","pm","s"],["pd","pm","d"],["pp","pm","p"]].forEach(([id,k,f])=>$("#f-"+id).value=d[k]?.[f]??"");
-  $("#f-bed").value=d.sleep?.bed||"23:30";$("#f-wake").value=d.sleep?.wake||"07:00";$("#f-note").value=d.note||"";
+  const s=d.sleep||{},prev=iso(new Date(new Date(date+"T12:00")-864e5));slMode=s.none?"no":(s.bed&&s.wake)?"yes":"none";
+  $("#f-bed").value=s.bed||"23:30";$("#f-wake").value=s.wake||"07:00";
+  $("#f-bedd").value=s.bedDate||((s.bed||"23:30")>="12:00"?prev:date);$("#f-waked").value=s.wakeDate||date;slSync();$("#f-note").value=d.note||"";
   [["#f-sq","q"],["#f-mood","mood"],["#f-en","energy"]].forEach(([s,k])=>[...$(s).children].forEach(b=>b.classList.toggle("on",+b.dataset.v===form[k])));
   [...$("#f-sym").children].forEach(b=>b.classList.toggle("on",(d.symptoms||[]).includes(b.textContent)))}
 function openSheet(date){fill(date||todayIso());$("#sheet").classList.add("on");$("#scrim").classList.add("on")}
@@ -422,7 +438,7 @@ $("#add").onclick=()=>openSheet();$("#scrim").onclick=closeSheet;
 const v=id=>{const x=$("#f-"+id).value;return x?+x:null};
 $("#save").onclick=()=>{const date=$("#f-date").value||todayIso();
   const d={date,am:{s:v("as"),d:v("ad"),p:v("ap")},pm:{s:v("ps"),d:v("pd"),p:v("pp")},
-    sleep:{bed:$("#f-bed").value,wake:$("#f-wake").value,q:form.q||null},mood:form.mood||null,energy:form.energy||null,
+    sleep:slMode==="yes"?{bed:$("#f-bed").value,wake:$("#f-wake").value,bedDate:$("#f-bedd").value,wakeDate:$("#f-waked").value,q:form.q||null}:slMode==="no"?{none:true}:{},mood:form.mood||null,energy:form.energy||null,
     symptoms:[...$("#f-sym").children].filter(b=>b.classList.contains("on")).map(b=>b.textContent),note:$("#f-note").value.trim(),more:days[date]?.more||[],updated:Date.now()};
   saveDay(d);closeSheet();toast("Сохранено")};
 let armed=false;$("#del").onclick=()=>{if(!armed){armed=true;$("#del").textContent="Нажмите ещё раз, чтобы удалить";setTimeout(()=>{armed=false;$("#del").textContent="Удалить запись за этот день"},3000);return}
