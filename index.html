@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Пульс и сон</title>
+<meta name="theme-color" content="#14122b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" id="touch-icon" href="icon.svg">
+<script>
+// iPhone needs a PNG home-screen icon: draw it from the SVG at load
+(function(){var i=new Image();i.onload=function(){try{var c=document.createElement("canvas");c.width=c.height=180;c.getContext("2d").drawImage(i,0,0,180,180);document.getElementById("touch-icon").href=c.toDataURL("image/png")}catch(e){}};i.src="icon.svg"})();
+</script>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Пульс и сон">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-column phone app, three tabs + bottom sheet for entries. Night sky for sleep, coral pulse for pressure. */
+:root{
+  --bg:#f3f1fb; --surface:#ffffff; --surface2:#ebe8f7; --fg:#1d1a36; --muted:#6c6890;
+  --line:#dcd8ee; --sleep:#6b5cf0; --sleep2:#a99ef9; --pulse:#e8505b; --pulse2:#f59aa0;
+  --good:#1f9d6b; --warn:#d68a12; --bad:#d6404b; --glow:rgba(107,92,240,.18);
+  --display:"Unbounded",system-ui,sans-serif; --body:"Onest",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#110f24; --surface:#1c1938; --surface2:#262249; --fg:#efedff; --muted:#9a95c4;
+  --line:#2f2b58; --sleep:#8f82ff; --sleep2:#5b4fd1; --pulse:#ff6b74; --pulse2:#9c3b45;
+  --good:#3fcf93; --warn:#f2b441; --bad:#ff6b74; --glow:rgba(143,130,255,.22); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#110f24; --surface:#1c1938; --surface2:#262249; --fg:#efedff; --muted:#9a95c4;
+  --line:#2f2b58; --sleep:#8f82ff; --sleep2:#5b4fd1; --pulse:#ff6b74; --pulse2:#9c3b45;
+  --good:#3fcf93; --warn:#f2b441; --bad:#ff6b74; --glow:rgba(143,130,255,.22); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+:root{padding-top:env(safe-area-inset-top,0px)}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.app{max-width:520px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 120px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:1.5rem}
+h2{font-size:1.02rem;font-weight:500}
+.eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:18px}
+.view{display:flex;flex-direction:column;gap:14px;animation:rise .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{transform:translateY(14px);opacity:.3}to{transform:none;opacity:1}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:18px}
+.row{display:flex;gap:12px}
+.row>*{flex:1;min-width:0}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600;padding:4px 10px;border-radius:99px;background:var(--surface2)}
+.badge i{width:8px;height:8px;border-radius:50%;background:currentColor}
+.b-good{color:var(--good)}.b-warn{color:var(--warn)}.b-bad{color:var(--bad)}.b-mid{color:var(--sleep)}
+
+/* hero */
+.hero{position:relative;overflow:hidden;border-radius:26px;padding:20px;color:#fff;
+  background:radial-gradient(120% 90% at 85% 0%,#7d6cff 0%,transparent 55%),linear-gradient(160deg,#2a2163 0%,#16123a 100%)}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.hero>*{position:relative}
+.hero .eyebrow{color:rgba(255,255,255,.7)}
+.vitals{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.bp{font-family:var(--display);font-size:2.1rem;font-weight:700;line-height:1}
+.bp small{font-size:.9rem;font-weight:500;opacity:.7}
+.heart{display:inline-block;color:#ff8a92;animation:beat 1.1s infinite}
+@keyframes beat{0%,100%{transform:scale(1)}15%{transform:scale(1.25)}30%{transform:scale(1)}45%{transform:scale(1.15)}}
+.ring{width:96px;height:96px;justify-self:end}
+.ring circle{fill:none;stroke-width:9;stroke-linecap:round}
+.ring .tr{stroke:rgba(255,255,255,.15)}
+.ring .fg{stroke:#b9b0ff;transition:stroke-dashoffset 1.2s cubic-bezier(.2,.8,.2,1)}
+.ring text{fill:#fff;font-family:var(--display);font-size:20px;font-weight:700}
+.ring .sm{font-size:10px;font-family:var(--body);font-weight:500;opacity:.75}
+
+/* forecast */
+.fc{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.fc div{background:var(--surface2);border-radius:16px;padding:12px 10px;text-align:center}
+.fc b{display:block;font-family:var(--display);font-size:1.05rem;margin:4px 0 2px}
+.meter{height:8px;border-radius:9px;background:var(--surface2);overflow:hidden;margin-top:10px}
+.meter span{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,var(--pulse),var(--warn),var(--good));transition:width 1s}
+.tip{font-size:.92rem;line-height:1.5;margin:10px 0 0}
+
+/* diary */
+.day{display:grid;grid-template-columns:52px 1fr;gap:12px;align-items:start;cursor:pointer}
+.date{text-align:center;background:var(--surface2);border-radius:14px;padding:8px 0}
+.date b{display:block;font-family:var(--display);font-size:1.2rem}
+.date span{font-size:.7rem;color:var(--muted);text-transform:uppercase}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font-size:.75rem;padding:3px 9px;border-radius:99px;background:var(--surface2);color:var(--muted)}
+.note{margin:8px 0 0;font-size:.9rem;line-height:1.45;overflow-wrap:anywhere}
+.face{font-family:var(--display);font-size:.8rem}
+
+/* charts */
+svg.chart{width:100%;height:auto;display:block;margin-top:10px;overflow:visible}
+svg.chart text{fill:var(--muted);font-size:10px;font-family:var(--body)}
+.legend{display:flex;gap:14px;font-size:.78rem;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.draw{stroke-dasharray:1200;stroke-dashoffset:1200;animation:draw 1.4s .1s forwards cubic-bezier(.3,.7,.2,1)}
+@keyframes draw{to{stroke-dashoffset:0}}
+.grow{transform-origin:bottom;transform-box:fill-box;animation:grow .8s backwards cubic-bezier(.2,.8,.2,1)}
+@keyframes grow{from{transform:scaleY(0)}}
+
+/* nav */
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid var(--line)}
+.nav-in{max-width:520px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.tab{flex:1;background:none;border:0;color:var(--muted);font:600 .74rem var(--body);display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border-radius:14px;cursor:pointer}
+.tab svg{width:22px;height:22px}
+.tab.on{color:var(--sleep)}
+.fab{width:58px;height:58px;flex:0 0 58px;border-radius:20px;border:0;cursor:pointer;color:#fff;font-size:30px;line-height:1;
+  background:linear-gradient(140deg,var(--pulse),var(--sleep));box-shadow:0 8px 24px var(--glow);transition:transform .2s;margin-top:-26px}
+.fab:active{transform:scale(.92)}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--sleep);outline-offset:2px}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(10,8,30,.5);z-index:30;opacity:0;pointer-events:none;transition:opacity .3s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:31;max-height:92%;overflow:auto;background:var(--bg);border-radius:28px 28px 0 0;
+  transform:translateY(105%);transition:transform .42s cubic-bezier(.2,.9,.2,1);
+  padding:8px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.sheet.on{transform:none}
+.sheet-in{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.grab{width:42px;height:5px;border-radius:9px;background:var(--line);margin:4px auto 6px}
+label{display:block;font-size:.8rem;color:var(--muted);font-weight:600;margin-bottom:6px}
+input,textarea{width:100%;font:500 1rem var(--body);color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px}
+input[type=number]{font-variant-numeric:tabular-nums;text-align:center;font-family:var(--display);font-size:1.1rem}
+textarea{min-height:78px;resize:vertical}
+.scale{display:flex;gap:6px}
+.scale button{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:14px;padding:10px 0;cursor:pointer;font:600 .8rem var(--body);transition:all .2s}
+.scale button.on{background:var(--sleep);border-color:var(--sleep);color:#fff;transform:translateY(-2px)}
+.scale.p button.on{background:var(--pulse);border-color:var(--pulse)}
+.sym button{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:99px;padding:7px 12px;font:500 .82rem var(--body);cursor:pointer}
+.sym button.on{background:var(--pulse);border-color:var(--pulse);color:#fff}
+.primary{border:0;border-radius:16px;padding:15px;font:600 1rem var(--body);color:#fff;background:linear-gradient(120deg,var(--sleep),var(--pulse));cursor:pointer}
+.ghost{border:1px solid var(--line);border-radius:16px;padding:13px;font:600 .9rem var(--body);color:var(--bad);background:none;cursor:pointer}
+.empty{text-align:center;padding:30px 18px}
+.toast{position:fixed;left:50%;top:calc(16px + env(safe-area-inset-top,0px));transform:translate(-50%,-140%);z-index:40;background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:99px;font-weight:600;font-size:.88rem;transition:transform .35s cubic-bezier(.2,.9,.2,1)}
+.toast.on{transform:translate(-50%,0)}
+.avatar{width:42px;height:42px;border-radius:14px;border:0;cursor:pointer;color:#fff;font:700 1rem var(--display);background:linear-gradient(140deg,var(--sleep),var(--pulse))}
+.sheet.full{max-height:100%;height:100%;border-radius:0}
+.norms{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.norms div{background:var(--surface2);border-radius:16px;padding:12px 8px;text-align:center}
+.norms b{display:block;font-family:var(--display);font-size:1rem;margin-top:4px}
+.backup{display:flex;gap:8px}
+.backup>*{flex:1;text-align:center;border:1px solid var(--line);border-radius:14px;padding:11px;font:600 .85rem var(--body);color:var(--fg);background:var(--surface);cursor:pointer}
+.sample{font-size:.75rem;color:var(--warn);font-weight:600}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.draw{stroke-dashoffset:0}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div><div class="eyebrow" id="today-label"></div><h1 id="hello">Добрый день</h1></div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+      <button class="avatar" id="prof-btn" aria-label="Профиль">?</button>
+      <span class="badge b-mid" id="store-state"><i></i>загрузка</span></div>
+  </header>
+  <main id="main"></main>
+</div>
+
+<nav class="nav"><div class="nav-in">
+  <button class="tab on" data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>Сегодня</button>
+  <button class="tab" data-tab="diary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Дневник</button>
+  <button class="fab" id="add" aria-label="Добавить запись">+</button>
+  <button class="tab" data-tab="charts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Графики</button>
+  <button class="tab" data-tab="forecast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Прогноз</button>
+</div></nav>
+
+<div class="scrim" id="scrim"></div>
+<section class="sheet" id="sheet" aria-label="Запись за день"><div class="sheet-in">
+  <div class="grab"></div>
+  <div class="top" style="margin:0"><h2 id="sheet-title">Запись за день</h2><input type="date" id="f-date" style="width:auto"></div>
+
+  <div class="card"><div class="eyebrow" style="margin-bottom:10px">Давление утром</div>
+    <div class="row"><div><label for="f-as">Верхнее</label><input id="f-as" type="number" inputmode="numeric" placeholder="120"></div>
+    <div><label for="f-ad">Нижнее</label><input id="f-ad" type="number" inputmode="numeric" placeholder="80"></div>
+    <div><label for="f-ap">Пульс</label><input id="f-ap" type="number" inputmode="numeric" placeholder="70"></div></div></div>
+  <div class="card"><div class="eyebrow" style="margin-bottom:10px">Давление вечером</div>
+    <div class="row"><div><label for="f-ps">Верхнее</label><input id="f-ps" type="number" inputmode="numeric" placeholder="125"></div>
+    <div><label for="f-pd">Нижнее</label><input id="f-pd" type="number" inputmode="numeric" placeholder="82"></div>
+    <div><label for="f-pp">Пульс</label><input id="f-pp" type="number" inputmode="numeric" placeholder="72"></div></div></div>
+
+  <div class="card"><div class="eyebrow" style="margin-bottom:10px">Сон</div>
+    <div class="row"><div><label for="f-bed">Лёг</label><input id="f-bed" type="time" value="23:30"></div>
+    <div><label for="f-wake">Встал</label><input id="f-wake" type="time" value="07:00"></div></div>
+    <label style="margin-top:12px">Качество сна</label>
+    <div class="scale" id="f-sq"></div></div>
+
+  <div class="card"><div class="eyebrow" style="margin-bottom:10px">Самочувствие</div>
+    <label>Общее состояние</label><div class="scale p" id="f-mood"></div>
+    <label style="margin-top:12px">Энергия</label><div class="scale p" id="f-en"></div>
+    <label style="margin-top:12px">Симптомы</label><div class="chips sym" id="f-sym"></div>
+    <label for="f-note" style="margin-top:12px">Заметка</label><textarea id="f-note" placeholder="Как прошёл день, лекарства, погода…"></textarea></div>
+
+  <button class="primary" id="save">Сохранить</button>
+  <button class="ghost" id="del" hidden>Удалить запись за этот день</button>
+</div></section>
+<section class="sheet" id="prof" aria-label="Профиль"><div class="sheet-in">
+  <div class="grab"></div>
+  <div><div class="eyebrow">Знакомство</div><h2 style="margin-top:6px;font-size:1.3rem">Расскажите о себе</h2>
+    <p class="muted" style="margin:8px 0 0;line-height:1.45">По возрасту и полу приложение подберёт вашу личную норму давления, пульса и сна. Её можно поменять позже, нажав на значок профиля.</p></div>
+  <div class="card"><label for="p-name">Как к вам обращаться</label><input id="p-name" placeholder="Имя (необязательно)">
+    <label for="p-age" style="margin-top:12px">Возраст, полных лет</label><input id="p-age" type="number" inputmode="numeric" min="14" max="110" placeholder="45">
+    <label style="margin-top:12px">Пол</label><div class="scale" id="p-sex"><button type="button" data-v="f">Женский</button><button type="button" data-v="m">Мужской</button></div></div>
+  <div class="card" id="p-preview"></div>
+  <button class="primary" id="p-save">Сохранить</button>
+  <div class="card"><div class="eyebrow" style="margin-bottom:6px">Резервная копия</div>
+    <p class="muted" style="margin:0 0 10px;font-size:.85rem;line-height:1.45">Записи хранятся только на этом телефоне. Иногда сохраняйте копию в файл — из неё можно всё восстановить.</p>
+    <div class="backup"><button type="button" id="b-export">Сохранить в файл</button><label for="b-import" style="margin:0">Загрузить из файла</label></div>
+    <input type="file" id="b-import" accept=".json,application/json" hidden></div>
+</div></section>
+<div class="toast" id="toast"></div>
+
+<script>
+const MOODS=["Плохо","Так себе","Норм","Хорошо","Отлично"];
+const SYMS=["Головная боль","Головокружение","Шум в ушах","Слабость","Тревога","Отёки","Бессонница","Сердцебиение"];
+const WD=["вс","пн","вт","ср","чт","пт","сб"];
+const MON=["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"];
+let days={}, tab="today", isSample=false, col=null, form={};
+const $=s=>document.querySelector(s);
+const iso=d=>{const z=new Date(d);z.setMinutes(z.getMinutes()-z.getTimezoneOffset());return z.toISOString().slice(0,10)};
+const todayIso=()=>iso(new Date());
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+
+/* ---------- storage: private db rows, local fallback ---------- */
+const LS="pulse-sleep-days",LSP="pulse-sleep-profile";
+let profile=null;
+function lsLoad(){try{profile=JSON.parse(localStorage.getItem(LSP)||"null");return JSON.parse(localStorage.getItem(LS)||"{}")}catch{return{}}}
+function lsSave(){try{localStorage.setItem(LS,JSON.stringify(days));localStorage.setItem(LSP,JSON.stringify(profile))}catch{}}
+function saveDay(d){days[d.date]=d;lsSave();render()}
+function delDay(date){delete days[date];lsSave();render()}
+function saveProfile(p){profile=p;lsSave();render()}
+function setState(t,cls){const b=$("#store-state");b.className="badge "+cls;b.innerHTML="<i></i>"+t}
+
+/* backup to / from a file */
+$("#b-export").onclick=()=>{const blob=new Blob([JSON.stringify({profile,days},null,1)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="pulse-i-son-"+todayIso()+".json";document.body.appendChild(a);a.click();a.remove();toast("Копия сохранена")};
+$("#b-import").onchange=async e=>{const f=e.target.files[0];if(!f)return;
+  try{const j=JSON.parse(await f.text());if(!j.days)throw 0;days={...days,...j.days};if(j.profile)profile=j.profile;if(!profile)setTimeout(()=>openProf(true),500);lsSave();render();closeProf();toast("Записи восстановлены")}
+  catch{toast("Это не файл копии «Пульс и сон»")}e.target.value=""};
+
+/* ---------- personal norms by age and sex ----------
+   Ориентиры по возрастным таблицам; сверху ограничены 140/90 — выше это
+   уже повышенное давление в любом возрасте. */
+const BP_TABLE={f:[[20,116,72],[30,120,75],[40,127,80],[50,137,84],[60,140,85],[200,140,85]],
+                m:[[20,123,76],[30,126,79],[40,129,81],[50,135,83],[60,140,85],[200,140,85]]};
+function norm(p=profile){
+  const age=p?.age||40,sex=p?.sex||"f";
+  const [,s,d]=BP_TABLE[sex].find(r=>age<r[0]);
+  const sleep=age<18?[8,10]:age<65?[7,9]:[7,8];
+  const pulse=sex==="f"?[65,85]:[60,80];
+  return{s,d,low:[Math.max(90,s-25),Math.max(60,d-15)],sleep,pulse,target:sleep[0]+.5}}
+
+/* ---------- derived numbers ---------- */
+function sleepH(d){const s=d.sleep;if(!s||!s.bed||!s.wake)return null;const[a,b]=s.bed.split(":").map(Number),[c,e]=s.wake.split(":").map(Number);let m=(c*60+e)-(a*60+b);if(m<=0)m+=1440;return m/60}
+function bpOf(d){const r=[d.am,d.pm,...(d.more||[])].filter(x=>x&&x.s&&x.d);if(!r.length)return null;return{s:Math.round(avg(r.map(x=>+x.s))),d:Math.round(avg(r.map(x=>+x.d))),p:Math.round(avg(r.map(x=>+x.p).filter(Boolean)))||null}}
+function bpClass(s,d){const n=norm();
+  if(s>=160||d>=100)return["Высокое","b-bad"];
+  if(s>=Math.max(n.s+15,140)||d>=Math.max(n.d+10,90))return["Повышенное","b-bad"];
+  if(s>n.s+5||d>n.d+5)return["Выше вашей нормы","b-warn"];
+  if(s<n.low[0]||d<n.low[1])return["Ниже вашей нормы","b-warn"];
+  return["В вашей норме","b-good"]}
+function sorted(){return Object.values(days).sort((a,b)=>a.date<b.date?1:-1)}
+function sample(){const out={},now=new Date();for(let i=13;i>=0;i--){const t=new Date(now);t.setDate(t.getDate()-i);const k=iso(t),w=Math.sin(i/2);
+  out[k]={date:k,am:{s:124+Math.round(w*7+(i%3)),d:80+Math.round(w*4),p:68+(i%5)},pm:{s:130+Math.round(w*6),d:84+Math.round(w*3),p:74},
+  sleep:{bed:i%4?"23:20":"00:40",wake:"07:00",q:i%4?4:2},mood:i%4?4:2,energy:i%4?4:2,symptoms:i%4?[]:["Головная боль"],note:i===0?"Пример записи: вечером гулял 40 минут.":""}}return out}
+function dataset(){const real=sorted();isSample=real.length===0;return isSample?Object.values(sample()).sort((a,b)=>a.date<b.date?1:-1):real}
+
+/* simple least-squares trend over last N days */
+function trend(pts){if(pts.length<3)return null;const n=pts.length,mx=avg(pts.map(p=>p[0])),my=avg(pts.map(p=>p[1]));let a=0,b=0;pts.forEach(([x,y])=>{a+=(x-mx)*(y-my);b+=(x-mx)**2});const k=b?a/b:0;return x=>my+k*(x-mx)}
+function forecast(list){
+  const last=list.slice(0,14).reverse(),t0=new Date(last[0]?.date||todayIso());
+  const dx=d=>(new Date(d)-t0)/864e5;
+  const fs=trend(last.filter(bpOf).map(d=>[dx(d.date),bpOf(d).s])),fd=trend(last.filter(bpOf).map(d=>[dx(d.date),bpOf(d).d]));
+  const sl=list.slice(0,7).map(sleepH).filter(x=>x!=null),sAvg=avg(sl);
+  const N=norm(),debt=sl.reduce((t,h)=>t+Math.max(0,N.target-h),0);
+  const moods=list.slice(0,7).map(d=>d.mood).filter(Boolean);
+  // wellbeing score 0-100: mood baseline, minus sleep debt and high BP
+  const lastBp=list.find(bpOf)?bpOf(list.find(bpOf)):null;
+  let score=(avg(moods)??3)*20;score-=Math.min(25,debt*4);if(lastBp&&(lastBp.s>N.s+5||lastBp.d>N.d+5))score-=10;if(sAvg&&sAvg>=N.sleep[0]&&sAvg<=N.sleep[1])score+=6;
+  score=Math.max(5,Math.min(98,Math.round(score)));
+  const next=[1,2,3].map(i=>{const t=new Date();t.setDate(t.getDate()+i);const x=dx(iso(t));
+    return{label:WD[t.getDay()]+", "+t.getDate(),s:fs?Math.round(Math.min(190,Math.max(85,fs(x)))):null,d:fd?Math.round(Math.min(120,Math.max(50,fd(x)))):null}});
+  // which nights went with better days
+  const pairs=list.map(d=>[sleepH(d),d.mood]).filter(p=>p[0]!=null&&p[1]);
+  const good=avg(pairs.filter(p=>p[0]>=N.sleep[0]).map(p=>p[1])),bad=avg(pairs.filter(p=>p[0]<N.sleep[0]).map(p=>p[1]));
+  return{score,next,sAvg,debt,good,bad,rising:fs&&fs(dx(todayIso())+3)-fs(dx(todayIso()))>2}
+}
+function adviceFor(f){const t=[],N=norm();
+  if(f.debt>=3)t.push(`За неделю набежал недосып около ${f.debt.toFixed(1)} ч. В вашем возрасте нужно ${N.sleep[0]}–${N.sleep[1]} ч сна — попробуйте лечь на 30–40 минут раньше пару вечеров подряд.`);
+  else if(f.sAvg)t.push(`Сон в среднем ${f.sAvg.toFixed(1)} ч за ночь при вашей норме ${N.sleep[0]}–${N.sleep[1]} ч. ${f.sAvg>=N.sleep[0]?"Хороший ритм, держите его.":"Немного не хватает."}`);
+  if(f.good&&f.bad&&f.good-f.bad>=.5)t.push(`После ночей от ${N.sleep[0]} часов самочувствие у вас заметно лучше (${f.good.toFixed(1)} против ${f.bad.toFixed(1)} из 5).`);
+  if(f.rising)t.push(`Давление по тренду слегка растёт. Ваша норма — около ${N.s}/${N.d}. Меряйте утром и вечером в одно время, а при цифрах от 140/90 несколько дней подряд обсудите это с врачом.`);
+  return t.length?t:["Добавляйте записи каждый день — через неделю прогноз станет точнее."]}
+
+/* ---------- views ---------- */
+function render(){
+  const now=new Date();$("#today-label").textContent=WD[now.getDay()]+", "+now.getDate()+" "+MON[now.getMonth()];
+  const h=now.getHours(),nm=profile?.name?", "+profile.name:"";$("#hello").textContent=(h<6?"Доброй ночи":h<12?"Доброе утро":h<18?"Добрый день":"Добрый вечер")+nm;
+  $("#prof-btn").textContent=profile?(profile.name?profile.name[0].toUpperCase():profile.age):"?";
+  const list=dataset();
+  $("#main").innerHTML=({today:vToday,diary:vDiary,charts:vCharts,forecast:vForecast})[tab](list);
+  if(tab==="today")stars();
+  $("#main").querySelectorAll("[data-open]").forEach(el=>el.onclick=()=>openSheet(el.dataset.open));
+}
+const sampleNote=()=>isSample?`<div class="sample">Это пример. Нажмите «+», чтобы добавить первую запись — примеры исчезнут.</div>`:"";
+function vToday(list){
+  const d=list[0],bp=list.find(bpOf)?bpOf(list.find(bpOf)):null,sh=list.map(sleepH).find(x=>x!=null),f=forecast(list);
+  const pct=Math.min(1,(sh||0)/norm().target),C=2*Math.PI*40;const cls=bp?bpClass(bp.s,bp.d):null;
+  const isToday=days[todayIso()];
+  return `<div class="view">${sampleNote()}
+  <section class="hero"><canvas id="stars"></canvas>
+    <div class="eyebrow">Последние показатели</div>
+    <div class="vitals">
+      <div><div class="bp num">${bp?bp.s+"<small>/</small>"+bp.d:"—"}</div>
+        <div style="margin-top:8px;opacity:.85" class="num"><span class="heart">♥</span> ${bp&&bp.p?bp.p+" уд/мин":"пульс не указан"}</div>
+        ${cls?`<div class="badge ${cls[1]}" style="margin-top:10px;background:rgba(255,255,255,.12)"><i></i>${cls[0]}</div>`:""}</div>
+      <svg class="ring" viewBox="0 0 100 100"><circle class="tr" cx="50" cy="50" r="40"/>
+        <circle class="fg" cx="50" cy="50" r="40" stroke-dasharray="${C}" stroke-dashoffset="${C}" data-off="${C*(1-pct)}" transform="rotate(-90 50 50)"/>
+        <text x="50" y="52" text-anchor="middle" class="num">${sh?sh.toFixed(1):"—"}</text><text x="50" y="66" text-anchor="middle" class="sm">часов сна</text></svg>
+    </div></section>
+  <section class="card"><div class="top" style="margin:0"><div><div class="eyebrow">Индекс самочувствия</div><h2 style="margin-top:4px">${f.score} из 100</h2></div>
+    <span class="badge ${f.score>=70?"b-good":f.score>=45?"b-warn":"b-bad"}"><i></i>${f.score>=70?"Хороший день":f.score>=45?"Берегите силы":"Нужен отдых"}</span></div>
+    <div class="meter"><span style="width:0" data-w="${f.score}%"></span></div>
+    <p class="tip muted">${esc(adviceFor(f)[0])}</p></section>
+  <section class="card" ${isToday?`data-open="${todayIso()}"`:""} style="cursor:pointer" ${!isToday?'onclick="openSheet()"':""}>
+    <div class="eyebrow">Сегодня</div>
+    <h2 style="margin-top:6px">${isToday?"Запись есть — нажмите, чтобы дополнить":"Как вы себя чувствуете?"}</h2>
+    <p class="muted" style="margin:6px 0 0">${isToday?"Добавьте вечернее давление или заметку.":"Займёт меньше минуты: давление, сон и пара отметок."}</p></section>
+  ${d?`<section class="card"><div class="eyebrow">Неделя</div>${weekStrip(list)}</section>`:""}
+  <section class="card" style="cursor:pointer" onclick="openProf()"><div class="top" style="margin:0 0 12px"><div class="eyebrow">Ваша норма</div>
+    <span class="muted" style="font-size:.8rem">${profile?`${profile.sex==="m"?"мужчина":"женщина"}, ${profile.age} ${yrs(profile.age)}`:"укажите возраст и пол"}</span></div>${normsGrid()}</section>
+  </div>`}
+const yrs=n=>{const a=n%10,b=n%100;return a===1&&b!==11?"год":a>=2&&a<=4&&(b<10||b>=20)?"года":"лет"};
+function normsGrid(p){const n=norm(p);return`<div class="norms">
+  <div><span class="muted" style="font-size:.74rem">Давление</span><b class="num">${n.s}/${n.d}</b><span class="muted" style="font-size:.7rem">мм рт. ст.</span></div>
+  <div><span class="muted" style="font-size:.74rem">Пульс</span><b class="num">${n.pulse[0]}–${n.pulse[1]}</b><span class="muted" style="font-size:.7rem">уд/мин</span></div>
+  <div><span class="muted" style="font-size:.74rem">Сон</span><b class="num">${n.sleep[0]}–${n.sleep[1]} ч</b><span class="muted" style="font-size:.7rem">за ночь</span></div></div>`}
+function weekStrip(list){const cells=[];for(let i=6;i>=0;i--){const t=new Date();t.setDate(t.getDate()-i);const k=iso(t),d=list.find(x=>x.date===k);
+  const m=d&&d.mood;cells.push(`<div style="text-align:center;flex:1"><div class="muted" style="font-size:.7rem">${WD[t.getDay()]}</div>
+  <div style="height:54px;display:flex;align-items:flex-end;justify-content:center;margin:6px 0"><div class="grow" style="width:14px;border-radius:8px;height:${m?m*20:6}%;background:${m?(m>=4?"var(--good)":m>=3?"var(--sleep)":"var(--pulse)"):"var(--line)"};animation-delay:${(6-i)*60}ms"></div></div>
+  <div class="num" style="font-size:.72rem">${d&&sleepH(d)?sleepH(d).toFixed(1)+"ч":"—"}</div></div>`)}
+  return `<div style="display:flex;gap:4px;margin-top:10px">${cells.join("")}</div><div class="legend"><span>Столбик — самочувствие</span><span>Внизу — часы сна</span></div>`}
+function vDiary(list){
+  if(!list.length)return"";
+  return `<div class="view">${sampleNote()}${list.map((d,i)=>{const dt=new Date(d.date+"T12:00"),bp=bpOf(d),sh=sleepH(d),c=bp?bpClass(bp.s,bp.d):null;
+  return `<article class="card day" ${isSample?"":`data-open="${d.date}"`} style="animation:rise .4s ${Math.min(i,8)*40}ms backwards">
+    <div class="date"><b class="num">${dt.getDate()}</b><span>${WD[dt.getDay()]}</span></div>
+    <div style="min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+      <b class="num" style="font-family:var(--display)">${bp?bp.s+"/"+bp.d:"—"}</b>${c?`<span class="badge ${c[1]}"><i></i>${c[0]}</span>`:""}</div>
+      <div class="muted num" style="font-size:.85rem;margin-top:4px">${sh?"Сон "+sh.toFixed(1)+" ч":"Сон не указан"}${d.sleep&&d.sleep.q?" · качество "+d.sleep.q+"/5":""}${d.mood?" · "+MOODS[d.mood-1].toLowerCase():""}</div>
+      ${(d.symptoms||[]).length?`<div class="chips">${d.symptoms.map(s=>`<span class="chip">${esc(s)}</span>`).join("")}</div>`:""}
+      ${[["Утро",d.am],...(d.more||[]).map(m=>[m.t,m]),["Вечер",d.pm]].filter(r=>r[1]&&r[1].s).length>1?`<div class="chips">${[["Утро",d.am],...(d.more||[]).map(m=>[m.t,m]),["Вечер",d.pm]].filter(r=>r[1]&&r[1].s).map(([t,r])=>`<span class="chip num">${esc(t)} ${r.s}/${r.d}${r.p?" · "+r.p:""}</span>`).join("")}</div>`:""}
+      ${d.note?`<p class="note">${esc(d.note)}</p>`:""}</div></article>`}).join("")}</div>`}
+function vCharts(list){
+  const L=list.slice(0,14).reverse(),W=320,H=150,pad=24,n=Math.max(L.length-1,1);
+  const x=i=>pad+i*(W-pad*2)/n;const y=v=>H-20-(v-50)/(170-50)*(H-36);
+  const path=(f)=>{let s="",on=false;L.forEach((d,i)=>{const v=f(d);if(v==null){on=false;return}s+=(on?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)+" ";on=true});return s};
+  const N=norm();
+  const grid=[60,100,140,160].map(v=>`<line x1="${pad}" x2="${W-6}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="0" y="${y(v)+3}">${v}</text>`).join("")
+    +[N.s,N.d].map(v=>`<line x1="${pad}" x2="${W-6}" y1="${y(v)}" y2="${y(v)}" stroke="var(--good)" stroke-dasharray="3 4" opacity=".8"/>`).join("");
+  const dots=(f,c)=>L.map((d,i)=>f(d)!=null?`<circle cx="${x(i)}" cy="${y(f(d))}" r="${i===L.length-1?4.5:2.5}" fill="${c}"/>`:"").join("");
+  const lab=L.map((d,i)=>i%Math.ceil(L.length/7)===0||i===L.length-1?`<text x="${x(i)}" y="${H-4}" text-anchor="middle">${+d.date.slice(8)}</text>`:"").join("");
+  const S=d=>bpOf(d)?.s??null,D=d=>bpOf(d)?.d??null,P=d=>bpOf(d)?.p??null;
+  const bw=(W-pad*2)/Math.max(L.length,1)*.6,sy=h=>H-20-h/10*(H-36);
+  const bars=L.map((d,i)=>{const h=sleepH(d);if(h==null)return"";const cx=pad+(i+.5)*(W-pad*2)/L.length;return`<rect class="grow" style="animation-delay:${i*40}ms" x="${cx-bw/2}" y="${sy(h)}" width="${bw}" height="${H-20-sy(h)}" rx="4" fill="${h>=N.sleep[0]?"var(--sleep)":"var(--sleep2)"}"/>`}).join("");
+  const sgrid=[4,6,8,10].map(v=>`<line x1="${pad}" x2="${W-6}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)"/><text x="0" y="${sy(v)+3}">${v}ч</text>`).join("");
+  const slab=L.map((d,i)=>i%Math.ceil(L.length/7)===0||i===L.length-1?`<text x="${pad+(i+.5)*(W-pad*2)/L.length}" y="${H-4}" text-anchor="middle">${+d.date.slice(8)}</text>`:"").join("");
+  const bpl=L.filter(bpOf),as=avg(bpl.map(d=>bpOf(d).s)),ad=avg(bpl.map(d=>bpOf(d).d)),sl=avg(L.map(sleepH).filter(v=>v!=null));
+  return `<div class="view">${sampleNote()}
+  <div class="row"><div class="card"><div class="eyebrow">Среднее давление</div><h2 class="num" style="margin-top:6px">${as?Math.round(as)+"/"+Math.round(ad):"—"}</h2><div class="muted" style="font-size:.8rem">мм рт. ст., 14 дней</div></div>
+  <div class="card"><div class="eyebrow">Средний сон</div><h2 class="num" style="margin-top:6px">${sl?sl.toFixed(1)+" ч":"—"}</h2><div class="muted" style="font-size:.8rem">за ночь, 14 дней</div></div></div>
+  <section class="card"><h2>Давление и пульс</h2>
+    <svg class="chart" viewBox="0 0 ${W} ${H}">${grid}
+      <path class="draw" d="${path(S)}" fill="none" stroke="var(--pulse)" stroke-width="2.5" stroke-linejoin="round"/>
+      <path class="draw" d="${path(D)}" fill="none" stroke="var(--pulse2)" stroke-width="2.5" stroke-linejoin="round"/>
+      <path class="draw" d="${path(P)}" fill="none" stroke="var(--sleep)" stroke-width="1.5" stroke-dasharray="0" opacity=".7"/>
+      ${dots(S,"var(--pulse)")}${dots(D,"var(--pulse2)")}${lab}</svg>
+    <div class="legend"><span><i style="background:var(--pulse)"></i>Верхнее</span><span><i style="background:var(--pulse2)"></i>Нижнее</span><span><i style="background:var(--sleep)"></i>Пульс</span><span><i style="background:var(--good)"></i>Ваша норма ${N.s}/${N.d}</span></div></section>
+  <section class="card"><h2>Сон по ночам</h2>
+    <svg class="chart" viewBox="0 0 ${W} ${H}">${sgrid}${bars}${slab}</svg>
+    <div class="legend"><span><i style="background:var(--sleep)"></i>${N.sleep[0]} ч и больше</span><span><i style="background:var(--sleep2)"></i>Меньше ${N.sleep[0]} ч</span></div></section></div>`}
+function vForecast(list){const f=forecast(list),tips=adviceFor(f);
+  return `<div class="view">${sampleNote()}
+  <section class="card"><div class="eyebrow">Давление на 3 дня</div><h2 style="margin-top:4px">По тренду последних двух недель</h2>
+    <div class="fc">${f.next.map(n=>{const c=n.s?bpClass(n.s,n.d):null;return`<div><span class="muted" style="font-size:.78rem">${n.label}</span><b class="num">${n.s?n.s+"/"+n.d:"—"}</b>${c?`<span class="badge ${c[1]}" style="font-size:.66rem;padding:2px 7px"><i></i>${c[0].split(",")[0]}</span>`:""}</div>`}).join("")}</div></section>
+  <section class="card"><div class="eyebrow">Самочувствие завтра</div>
+    <h2 style="margin-top:4px">${f.score>=70?"Скорее всего, бодрый день":f.score>=45?"Средний день, без перегрузок":"Лучше запланировать отдых"}</h2>
+    <div class="meter"><span style="width:0" data-w="${f.score}%"></span></div>
+    ${tips.map(t=>`<p class="tip">${esc(t)}</p>`).join("")}</section>
+  <p class="muted" style="font-size:.8rem;line-height:1.5;margin:0">Прогноз — простая математика по вашим записям, а не медицинский диагноз. Если давление держится от 140/90 или есть боль в груди, сильная головная боль, онемение — обращайтесь к врачу.</p></div>`}
+
+/* animate meters & ring after paint */
+new MutationObserver(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  document.querySelectorAll("[data-w]").forEach(e=>e.style.width=e.dataset.w);
+  document.querySelectorAll("[data-off]").forEach(e=>e.style.strokeDashoffset=e.dataset.off)}))).observe($("#main"),{childList:true});
+
+/* starry hero */
+let raf;function stars(){cancelAnimationFrame(raf);const c=$("#stars");if(!c)return;const r=c.getBoundingClientRect(),dpr=devicePixelRatio||1;c.width=r.width*dpr;c.height=r.height*dpr;const g=c.getContext("2d");g.scale(dpr,dpr);
+  const S=Array.from({length:46},()=>({x:Math.random()*r.width,y:Math.random()*r.height,s:Math.random()*1.4+.3,p:Math.random()*6}));
+  const still=matchMedia("(prefers-reduced-motion:reduce)").matches;
+  (function f(t){g.clearRect(0,0,r.width,r.height);S.forEach(s=>{g.globalAlpha=.25+.6*Math.abs(Math.sin(t/1400+s.p));g.fillStyle="#fff";g.beginPath();g.arc(s.x,s.y,s.s,0,7);g.fill()});if(!still&&document.body.contains(c))raf=requestAnimationFrame(f)})(0)}
+
+/* ---------- sheet ---------- */
+function scale(el,key,labels){el.innerHTML=labels.map((l,i)=>`<button type="button" data-v="${i+1}">${l}</button>`).join("");
+  el.onclick=e=>{const b=e.target.closest("button");if(!b)return;form[key]=+b.dataset.v;[...el.children].forEach(x=>x.classList.toggle("on",x===b))}}
+scale($("#f-sq"),"q",["1","2","3","4","5"]);scale($("#f-mood"),"mood",MOODS);scale($("#f-en"),"energy",["Нет сил","Мало","Средне","Бодро","Полно"]);
+$("#f-sym").innerHTML=SYMS.map(s=>`<button type="button">${s}</button>`).join("");
+$("#f-sym").onclick=e=>{const b=e.target.closest("button");if(b)b.classList.toggle("on")};
+function fill(date){const d=days[date]||{};form={q:d.sleep?.q,mood:d.mood,energy:d.energy};
+  $("#f-date").value=date;$("#sheet-title").textContent=days[date]?"Изменить запись":"Запись за день";$("#del").hidden=!days[date];
+  [["as","am","s"],["ad","am","d"],["ap","am","p"],["ps","pm","s"],["pd","pm","d"],["pp","pm","p"]].forEach(([id,k,f])=>$("#f-"+id).value=d[k]?.[f]??"");
+  $("#f-bed").value=d.sleep?.bed||"23:30";$("#f-wake").value=d.sleep?.wake||"07:00";$("#f-note").value=d.note||"";
+  [["#f-sq","q"],["#f-mood","mood"],["#f-en","energy"]].forEach(([s,k])=>[...$(s).children].forEach(b=>b.classList.toggle("on",+b.dataset.v===form[k])));
+  [...$("#f-sym").children].forEach(b=>b.classList.toggle("on",(d.symptoms||[]).includes(b.textContent)))}
+function openSheet(date){fill(date||todayIso());$("#sheet").classList.add("on");$("#scrim").classList.add("on")}
+function closeSheet(){$("#sheet").classList.remove("on");$("#scrim").classList.remove("on")}
+$("#f-date").onchange=e=>fill(e.target.value);
+$("#add").onclick=()=>openSheet();$("#scrim").onclick=closeSheet;
+const v=id=>{const x=$("#f-"+id).value;return x?+x:null};
+$("#save").onclick=()=>{const date=$("#f-date").value||todayIso();
+  const d={date,am:{s:v("as"),d:v("ad"),p:v("ap")},pm:{s:v("ps"),d:v("pd"),p:v("pp")},
+    sleep:{bed:$("#f-bed").value,wake:$("#f-wake").value,q:form.q||null},mood:form.mood||null,energy:form.energy||null,
+    symptoms:[...$("#f-sym").children].filter(b=>b.classList.contains("on")).map(b=>b.textContent),note:$("#f-note").value.trim(),more:days[date]?.more||[],updated:Date.now()};
+  saveDay(d);closeSheet();toast("Сохранено")};
+let armed=false;$("#del").onclick=()=>{if(!armed){armed=true;$("#del").textContent="Нажмите ещё раз, чтобы удалить";setTimeout(()=>{armed=false;$("#del").textContent="Удалить запись за этот день"},3000);return}
+  armed=false;delDay($("#f-date").value);closeSheet();toast("Запись удалена")};
+/* ---------- profile sheet ---------- */
+let pSex=null,pForced=false;
+function pDraft(){return{name:$("#p-name").value.trim(),age:Math.round(+$("#p-age").value)||null,sex:pSex}}
+function pPreview(){const p=pDraft(),ok=p.age>=14&&p.age<=110&&p.sex;
+  $("#p-preview").innerHTML=ok?`<div class="eyebrow" style="margin-bottom:10px">Ваша норма</div>${normsGrid(p)}`:`<p class="muted" style="margin:0">Укажите возраст и пол — здесь появится ваша норма.</p>`;
+  $("#p-save").disabled=!ok;$("#p-save").style.opacity=ok?1:.5}
+function openProf(forced){pForced=!!forced;const p=profile||{};$("#p-name").value=p.name||"";$("#p-age").value=p.age||"";pSex=p.sex||null;
+  [...$("#p-sex").children].forEach(b=>b.classList.toggle("on",b.dataset.v===pSex));pPreview();
+  $("#prof").classList.toggle("full",pForced);$("#prof").classList.add("on");$("#scrim").classList.add("on")}
+function closeProf(){$("#prof").classList.remove("on");$("#scrim").classList.remove("on")}
+$("#p-sex").onclick=e=>{const b=e.target.closest("button");if(!b)return;pSex=b.dataset.v;[...$("#p-sex").children].forEach(x=>x.classList.toggle("on",x===b));pPreview()};
+$("#p-age").oninput=pPreview;
+$("#p-save").onclick=()=>{const p=pDraft();if(!(p.age>=14&&p.age<=110&&p.sex))return;saveProfile(p);closeProf();toast("Норма обновлена")};
+$("#prof-btn").onclick=()=>openProf();
+$("#scrim").onclick=()=>{closeSheet();if(!pForced)closeProf()};
+function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("on");clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove("on"),1800)}
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===b));render();scrollTo({top:0,behavior:"smooth"})});
+
+/* ---------- start ---------- */
+days=lsLoad();
+try{navigator.storage?.persist?.()}catch{}
+setState("на телефоне","b-good");render();
+if(!profile)setTimeout(()=>openProf(true),400);
+if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
