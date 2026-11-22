@@ -1,0 +1,15 @@
+{
+  "name": "Пульс и сон",
+  "short_name": "Пульс и сон",
+  "description": "Дневник давления, сна и самочувствия",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#110f24",
+  "theme_color": "#14122b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
